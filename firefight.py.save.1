@@ -1,0 +1,18 @@
+import I2C_LCD_driver
+import time
+import board
+import adafruit_tmp117
+#import adafruit_si7021
+import smbus
+
+i2c = board.I2C()
+tmp117 = adafruit_tmp117.TMP117(i2c)
+mylcd = I2C_LCD_driver.lcd()
+bus = smbus.SMBus(1)
+bus.write_byte(0x40,0xF5)
+#sensor = adafruit_si7021.SI7021(i2c) 
+
+while True:
+	mylcd.lcd_display_string("%.2f degrees C"%tmp117.temperature,1)
+#	mylcd.lcd_display_string("PRJ Tech Firefight 1.0",2)
+#	mylcd.lcd_display_string("%.2f RH"%sensor.relative_humidity,2)
