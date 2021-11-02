@@ -8,7 +8,7 @@ import max30100
 i2c = board.I2C()
 tmp117 = adafruit_tmp117.TMP117(i2c)
 mylcd = I2C_LCD_driver.lcd()
-ALERT = 24
+ALERT = 23
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(ALERT,GPIO.OUT)
 mx30 = max30100.MAX30100()

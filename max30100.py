@@ -8,6 +8,14 @@
 """
 
 import smbus
+#import numpy
+#from scipy import signal
+#import numpy as np
+
+#y_coordinates = np.array(y_coordinates) # convert your 1-D array to a numpy array if it's not, otherwise omit this line
+#peak_widths = np.arange(1, max_peak_width)
+#peak_indices = signal.find_peaks_cwt(y_coordinates, peak_widths)
+#peak_count = len(peak_indices) # the number of peaks in the array
 
 INT_STATUS   = 0x00  # Which interrupts are tripped
 INT_ENABLE   = 0x01  # Which interrupts are active
@@ -97,7 +105,7 @@ class MAX30100(object):
                  ):
 
         # Default to the standard I2C bus on Pi.
-        self.i2c = i2c if i2c else smbus.SMBus(1)
+        self.i2c = i2c if i2c else smbus.SMBus(10)
 
         self.set_mode(MODE_HR)  # Trigger an initial temperature read.
         self.set_led_current(led_current_red, led_current_ir)
@@ -117,6 +125,26 @@ class MAX30100(object):
     @property
     def ir(self):
         return self.buffer_ir[-1] if self.buffer_ir else None
+    
+#    @property
+#    def hr(self):
+#        if self.buffer_ir[-1] < 5000:
+#            return 0
+#        peak_count = numpy.array([])       
+#        bGoingUp = True
+#        nLastPeak = 0
+#        for val in range (1,len(self.buffer_ir)):
+#            if self.buffer_ir[val] > self.buffer_ir[val-1]:
+#                bGoingUp = True
+#            elif self.buffer_ir[val] < self.buffer_ir[val-1] and bGoingUp == True:
+#                bGoingUp = False
+#                peak_count = numpy.append(peak_count,[val-nLastPeak])
+#                nLastPeak=val
+#        avg_beat_distance = numpy.average(peak_count)
+#        return avg_beat_distance
+        
+
+
 
     def set_led_current(self, led_current_red=11.0, led_current_ir=11.0):
         # Validate the settings, convert to bit values.
