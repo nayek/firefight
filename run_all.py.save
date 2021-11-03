@@ -1,0 +1,84 @@
+import sys
+import time
+import board
+import adafruit_tmp117
+from adafruit_htu21d import HTU21D
+import RPi.GPIO as GPIO
+import I2C_LCD_driver
+import max30100
+from mq import *
+
+#setup i2c and lc2c = busio.pins(3,5)
+i2c = board.I2C()
+mylcd = I2C_LCD_driver.lcd()
+
+bodySensors = False
+envSensors = False
+
+tmp117 = None
+try:
+    #connect to tmp 117
+    tmp117 = adafruit_tmp117.TMP117(i2c)
+    
+    #connect to heartbeat monitor
+    mx30 = max30100.MAX30100()
+    mx30.set_mode(max30100.MODE_SPO2)
+    
+    bodySensors = True
+except:
+    tmp117 = None
+
+    
+
+
+#connect to env sensor
+sensor = None
+try:
+    sensor = HTU21D(i2c)
+    mq = MQ();
+    
+    envSensors = True
+except:
+    sensor = None
+    
+#setup alarm (temporary, move this)
+ALERT = 23
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(ALERT,GPIO.OUT)
+
+while True:
+#print data for body sensors
+    if not bodySensors:
+        mylcd.lcd_display_string("No Body Sensors",1)
+    else:
+        mx30.read_sensor()
+        mylcd.lcd_display_string("Temp: {0:.2f} C        ".format(tmp117.temperature),1)
+        time.sleep(2)
+        mylcd.lcd_display_string("Max: {0:.2F} {1:.2F}    ".format(mx30.red,mx30.ir),1)
+        
+#print data for environmental sensors        
+    if not envSensors:
+        mylcd.lcd_display_string("No Env Sensors",2)
+    else:
+        perc = mq.MQPercentage()
+        mylcd.lcd_display_string("LPG: %.4f ppm              " % (perc["GAS_LPG"]),2)
+        time.sleep(2)
+        mylcd.lcd_display_string("CO: %.4f ppm                  " % (perc["CO"]),2)
+        time.sleep(2)
+        mylcd.lcd_display_string("Smoke: %.4f ppm             " % (perc["SMOKE"]),2)
+        time.sleep(2)
+        mylcd.lcd_display_string("Temp: %.2f H: %.2f             " % (sensor.temperature, sensor.relative_humidity),2)
+
+#set off alarms depending on readings
+    time.sleep(2)
+    if tmp117.temperature > 25:
+        GPIO.output(ALERT,True)
+        time.sleep(1)
+        GPIO.output(ALERT,False)
+        
+    if envSensors == True and perc["CO"] > 1:
+        GPIO.output(ALERT,True)
+        time.sleep(1)
+        GPIO.output(ALERT,False)
+
+    GPIO.output(ALERT,False)
