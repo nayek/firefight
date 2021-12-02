@@ -6,9 +6,6 @@ import time
 import board
 import busio
 
-#library to process terminate
-import signal
-
 #library for tmp117 sensor
 import adafruit_tmp117
 
@@ -29,9 +26,6 @@ import adafruit_mlx90614
 
 #library for gas sensors
 from mq import *
-
-#library for sending/receiving RF signal
-from rpi_rf import RFDevice
 
 #####Init Variables######
 #
@@ -55,25 +49,18 @@ bOtherAlarmPresent = False
 bToggle = False
 bUpdateDisplay = False
 bHeartBeat = False
-bDiagMode = False
 nDisplay = 0
 
-nOthersAlarm = 0
-nAlarmCount = 0
-bAlarmActive = False
-
-
 #Default all sensors text to NA
-sBodyO2Text = "--"
-sBodyHBText = "--"
-sBodyTempText = "--"
-sBodyIRText = "--"
-sEnvCOText = "--"
-sEnvTempText = "--"
-sEnvRHText = "--"
-sOurAlarmText = "--"
-sOtherAlarmText = "--"
-sLastWarning = "No Warnings"
+sBodyO2Text = "CA"
+sBodyHBText = "CA"
+sBodyTempText = "CA"
+sBodyIRText = "CA"
+sEnvCOText = "CA"
+sEnvTempText = "CA"
+sEnvRHText = "CA"
+sOurAlarmText = "CA"
+sOtherAlarmText = "CA"
 
 #Full text displays
 sFullBodyO2Text = "NA"
@@ -102,101 +89,22 @@ i2c = None
 htu21d = None
 mq = None
 mlx = None
-rfDevice = None
-rftimestamp = None
     
 #setup alarm (temporary, move this)
 ALERT = 22
 TOGGLE = 14
 HEARTBEAT = 15
-TRANSMIT = 17
-RECEIVE = 18
-ALARMCODE = 18766
 
-#interrupt for displaying toggle values
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(ALERT,GPIO.OUT)
+GPIO.setup(HEARTBEAT,GPIO.OUT)
+
+GPIO.setup(TOGGLE,GPIO.IN,pull_up_down=GPIO.PUD_UP)
+
+
 def myInterrupt(channel):
     if not bToggle:
         toggleDisplay()
-
-#alert us to someone elses alarm
-def CheckForOtherAlarm():
-    global rfDevice
-    global nOthersAlarm
-    global rftimestamp
-    global sOtherAlarmText
-    global sLastWarning
-    
-    if rfDevice.rx_enabled:
-        #print(rfDevice.rx_code)
-        if rfDevice.rx_code_timestamp != rftimestamp:
-            print("new timestamp")
-            print(rfDevice.rx_code)
-            rftimestamp = rfDevice.rx_code_timestamp
-            if(rfDevice.rx_code == ALARMCODE):
-                print("Saw Alarm")
-                nOthersAlarm = nOthersAlarm + 1
-            else:
-                print("Noise: " + str(rfDevice.rx_code))
-        #else:
-        #    print(rfDevice.rx_code_timestamp)
-    
-        if nOthersAlarm >= 3:
-            sOtherAlarmText = "XX"
-            nOthersAlarm = 0
-            sLastWarning = "Check On Friends"
-            GPIO.output(ALERT,True)
-            time.sleep(.5)
-            GPIO.output(ALERT,False)
-    #else:
-    #    print("rx disabled")
-
-#local alarm enabled. Turn on alarm, send out alarm code, set our display to ours
-def SetLocalAlarm():
-    global sOurAlarmText
-    global rfDevice
-    
-    GPIO.output(ALERT,True)
-    if rfDevice.rx_enabled:
-        rfDevice.disable_rx()
-        rfDevice = RFDevice(TRANSMIT)
-        rfDevice.enable_tx()
-    
-    if rfDevice.tx_enabled:
-        rfDevice.tx_code(ALARMCODE, None, None)
-        
-    sOurAlarmText = "XX"
-    
-#set our alarm signal to active which will trigger an enabled alarm at some point
-def EnableAlarm(LastWarning):
-    global bAlarmActive
-    global sLastWarning
-    bAlarmActive = True
-    sLastWarning = LastWarning
-    
-    
-#disable our alarm signal and cancel the alarm, it was a false alarm    
-def DisableAlarm():
-    global nAlarmCount
-    global bAlarmActive
-    global rfDevice
-    
-    bAlarmActive = False
-    GPIO.output(ALERT,False)
-    nAlarmCount = 0
-    
-    # Reset RF device to Receive
-    if rfDevice is not None:
-        if rfDevice.tx_enabled:
-            rfDevice.disable_tx()
-            rfDevice = None
-        elif rfDevice.rx_enabled == False:
-            rfDevice = None
-        
-    if rfDevice is None:    
-        rfDevice = RFDevice(RECEIVE)
-        rfDevice.enable_rx()
-    
-    sOurAlarmText = "--"
     
 #setup the i2c lib used in adafruit devices
 def UpdateI2CLib(bForceInit):
@@ -214,33 +122,6 @@ def UpdateI2CLib(bForceInit):
     except:
             bI2CLibPresent = False
 
-def NormalizeEnvTemp(temp):
-    strTemp = "OK"
-    if temp < 10:
-        strTemp = "LO"
-    elif temp < 20:
-        strTemp = "lo"
-    elif temp < 40:
-        strTemp = "OK"
-    elif temp < 42:
-        strTemp = "hi"
-    else:
-        strTemp = "HI"
-        EnableAlarm("High Temp: " + str(temp))
-        
-    return strTemp
-    
-def NormalizeEnvHumidity(rh):
-    strTemp = "OK"
-    if rh < 5:
-        strTemp = "lo"
-    elif rh > 95:
-        strTemp = "hi"
-    else:
-        strTemp = "OK"
-        
-    return strTemp
-
 def UpdateEnvTempAndHumity(bForceInit):
     global bEnvTempPresent
     global htu21d
@@ -256,8 +137,8 @@ def UpdateEnvTempAndHumity(bForceInit):
             htu21d = HTU21D(i2c)
             bEnvTempPresent = True
 
-        sEnvTempText = "{0}".format(NormalizeEnvTemp(htu21d.temperature))
-        sEnvRHText = "{0}".format(NormalizeEnvHumidity(htu21d.relative_humidity))
+        sEnvTempText = "{0:2f}".format(htu21d.temperature)
+        sEnvRHText = "{0:2f}".format(htu21d.relative_humidity)
         sFullEnvTempText = "Env Temp: {0:.2f}C".format(htu21d.temperature)
         sFullEnvRHText = "Env RH: {0:.2f}%".format(htu21d.relative_humidity)
     except:
@@ -271,32 +152,6 @@ def UpdateEnvTempAndHumity(bForceInit):
             sEnvTempText = ".-"
             sEnvRHText = ".-"
 
-def NormalizeBodyTemp(temp):
-    strTemp = "OK"
-    #if temp < 30: #NA not reading human
-    #    strTemp = "??"
-    #elif temp < 35: #danger ALARM hypothermia
-    #    strTemp = "LO"
-    #elif temp < 35.8: #low
-    #    strTemp = "lo"
-    #elif temp > 38.8: #high
-    #    strTemp = "hi"
-    #elif temp > 40: #danger ALARM nearing pass out
-    #    strTemp = "HI"
-    if temp < 10:
-        strTemp = "LO"
-    elif temp < 20:
-        strTemp = "lo"
-    elif temp < 40:
-        strTemp = "OK"
-    elif temp < 42:
-        strTemp = "hi"
-    else:
-        strTemp = "HI"
-        EnableAlarm("High Temp: " + str(temp))
-        
-    return strTemp
-        
 #setup the body temp tmp117 sensor and/or pull latest data
 def UpdateBodyTemp(bForceInit):
     global bBodyTempPresent
@@ -311,7 +166,7 @@ def UpdateBodyTemp(bForceInit):
             tmp117 = adafruit_tmp117.TMP117(i2c)
             bBodyTempPresent = True
             
-        sBodyTempText = "{0}".format(NormalizeBodyTemp(tmp117.temperature))
+        sBodyTempText = "{0:2f}".format(tmp117.temperature)
         sFullBodyTempText = "Body Temp: {0:.2f}C".format(tmp117.temperature)
     except:
         bBodyTempPresent = False
@@ -320,22 +175,6 @@ def UpdateBodyTemp(bForceInit):
             sBodyTempText = "-."
         else:
             sBodyTempText = ".-"   
-
-def NormalizeIR(temp):
-    strTemp = "OK"
-    if temp < 10:
-        strTemp = "LO"
-    elif temp < 20:
-        strTemp = "lo"
-    elif temp < 40:
-        strTemp = "OK"
-    elif temp < 50:
-        strTemp = "hi"
-    else:
-        strTemp = "HI"
-        EnableAlarm("High IR Temp: " + str(temp))
-        
-    return strTemp
 
 #setup the body temp tmp117 sensor and/or pull latest data
 def UpdateBodyIRSensor(bForceInit):
@@ -351,7 +190,7 @@ def UpdateBodyIRSensor(bForceInit):
             mlx = adafruit_mlx90614.MLX90614(i2c)
             bBodyIRPresent = True
             
-        sBodyIRText = "{0}".format(NormalizeIR(mlx.object_temperature))
+        sBodyIRText = "{0:2f}".format(mlx.ambient_temperature)
         sFullBodyIRText = "T: {0:.2f} {1:.2f}".format(mlx.object_temperature,mlx.ambient_temperature)
         print(sFullBodyIRText)
     except:
@@ -361,19 +200,6 @@ def UpdateBodyIRSensor(bForceInit):
             sBodyIRText = "-."
         else:
             sBodyIRText = ".-"   
-
-def NormalizeEnvCO(coval):
-    strTemp = "OK"
-
-    if coval < 80:
-        strTemp = "OK"
-    elif coval < 1600:
-        strTemp = "hi"
-    else:
-        strTemp = "HI"
-        EnableAlarm("High CO: " + str(coval))
-        
-    return strTemp
 
 def UpdateEnvGasSensors(bForceInit):
     global sEnvCOText
@@ -396,7 +222,7 @@ def UpdateEnvGasSensors(bForceInit):
         #read sensor and set values if available
         perc = mq.MQPercentage()
 
-        sEnvCOText = "{0}".format(NormalizeEnvCO(perc["CO"]))
+        sEnvCOText = "{0:2f}".format(perc["CO"])
         sFullEnvCOText = "CO: {0:.4f}ppm".format(perc["CO"])
         sFullEnvLPGText = "LPG: {0:.4f}ppm".format(perc["GAS_LPG"])
         sFullEnvSmokeText = "Smoke: {0:.4f}ppm".format(perc["SMOKE"])
@@ -419,38 +245,6 @@ def ProcessMaxData(red,ir):
     
     return O2Data, HBData
 
-def NormalizeBodyO2(o2val):
-    strTemp = "OK"
-    if o2val < 10:
-        strTemp = "LO"
-    elif o2val < 20:
-        strTemp = "lo"
-    elif o2val < 40:
-        strTemp = "OK"
-    elif o2val < 42:
-        strTemp = "hi"
-    else:
-        strTemp = "HI"
-        EnableAlarm("High O2: " + str(o2val))
-        
-    return strTemp
-
-def NormalizeBodyHB(hbval):
-    strTemp = "OK"
-    if hbval < 10:
-        strTemp = "LO"
-    elif hbval < 20:
-        strTemp = "lo"
-    elif hbval < 40:
-        strTemp = "OK"
-    elif hbval < 42:
-        strTemp = "hi"
-    else:
-        strTemp = "HI"
-        EnableAlarm("High HB: " + str(hbval))
-        
-    return strTemp
-
 def UpdateBodyMaxSensors(bForceInit):
     global sBodyO2Text
     global sBodyHBText
@@ -471,8 +265,8 @@ def UpdateBodyMaxSensors(bForceInit):
         #read sensor and set values if available
         mx30.read_sensor()
         O2Text, HBText = ProcessMaxData(mx30.red, mx30.ir)
-        sBodyO2Text = "{0}".format(NormalizeBodyO2(O2Text))
-        sBodyHBText = "{0}".format(NormalizeBodyHB(HBText))
+        sBodyO2Text = "{0:2f}".format(O2Text)
+        sBodyHBText = "{0:2f}".format(HBText)
         sFullBodyO2Text = "Body O2: {0:.2f}ppm".format(O2Text)
         sFullBodyHBText = "Body HB: {0:.2f}bpm".format(HBText)
     except:        
@@ -509,11 +303,10 @@ def UpdateLCD(bForceInit):
             mylcd.lcd_clear()
             mylcd.lcd_display_string("PRJ Industries",1)
             mylcd.lcd_display_string("Calibrating...",2)
-
         elif not bToggle:
             #make sure the 2 lines are only 16 chars
             sTopLine =    "{0:.2s} {1:.2s} {2:.2s}      {3:.2s}".format(sBodyO2Text,sBodyHBText,sBodyTempText,sOurAlarmText)
-            sBottomLine = "{0:.2s} {1:.2s} {2:.2s}      {3:.2s}".format(sEnvCOText,sEnvTempText, sBodyIRText,sOtherAlarmText)
+            sBottomLine = "{0:.2s} {1:.2s} {2:.2s} {3:.2s}   {4:.2s}".format(sEnvCOText,sEnvTempText,sEnvRHText,sBodyIRText,sOtherAlarmText)
             mylcd.lcd_clear()
             mylcd.lcd_display_string(sTopLine,1)
             mylcd.lcd_display_string(sBottomLine,2)
@@ -537,11 +330,7 @@ def UpdateLCD(bForceInit):
                 #GPIO.output(ALERT,False)
             elif nDisplay == 4:
                 mylcd.lcd_display_string(sFullEnvSmokeText,1)
-                mylcd.lcd_display_string(sLastWarning,2)
-            elif nDisplay == 5:
-                mylcd.lcd_display_string(sLastWarning,1)
                 mylcd.lcd_display_string("End Report",2)
-                DisableAlarm()    
             else: #dont ever show this
                 mylcd.lcd_display_string("Hi Dr. Proano",1)
                 mylcd.lcd_display_string("I am Error",2)
@@ -549,26 +338,17 @@ def UpdateLCD(bForceInit):
 
             nDisplay = nDisplay + 1
             print(nDisplay)
-            if nDisplay > 5: #reset display
+            if nDisplay > 4: #reset display
                 nDisplay = 0
                 
             bToggle = False
     except Exception as e:
         bLCDPresent = False
-        if mylcd is not None:
-            mylcd.lcd_display_string("Error",1)
+        mylcd.lcd_display_string("Error",1)
         bToggle = False
         print(e)
         if nDisplay > 5: #reset display
                 nDisplay = 0
-
-# pylint: disable=unused-argument
-def exithandler(signal, frame):
-    mylcd.lcd_clear()
-    mylcd.backlight(0)
-    GPIO.cleanup()
-    #GPIO.output(HEARTBEAT,False)
-    sys.exit(0)
     
 #main processing function
 def main():
@@ -577,41 +357,13 @@ def main():
     global bHeartBeat
     global nDisplay
     global bToggle
-    global bDiagMode
-    global bAlarmActive
-    global rfDevice
     
-    #setup an exit handler when 
-    signal.signal(signal.SIGINT, exithandler)
-    signal.signal(signal.SIGTERM, exithandler)
-    
-    GPIO.cleanup()
-    
-    #setup BCM mode so pins go by GPIO number
-    GPIO.setmode(GPIO.BCM)
-    
-    #setup gpio pins for our devices
-    GPIO.setup(ALERT,GPIO.OUT)
-    GPIO.setup(HEARTBEAT,GPIO.OUT)
-    GPIO.setup(TOGGLE,GPIO.IN,pull_up_down=GPIO.PUD_UP)
-    
-    #if toggle is enable at start, go into diag mode
-    if GPIO.input(TOGGLE) == 0:
-        bDiagMode = True
-
-    #turn off the alarm just in case
-    DisableAlarm()
-        
-    #add an interrupt for when toggle button is pressed
     GPIO.add_event_detect(TOGGLE,GPIO.FALLING,callback=myInterrupt,bouncetime=250)
 
     #update the LCD right away so we aren't waiting for 5 seconds
     UpdateLCD(False)   
     
-    #main loop
     while True:
-        time.sleep(.01)
-        #heartbeat timer to make sure everything is still running
         if time.time() - lasthbtime > nHeartBeatTimerSec:
             #update heartbeat
             bHeartBeat = ~bHeartBeat
@@ -623,8 +375,6 @@ def main():
             if bToggle:
                 UpdateLCD(False)
             continue
-
-        CheckForOtherAlarm()
         
         #if we have waited 5 seconds then we are ok to disable toggle and reset our display
         bToggle = False
@@ -637,25 +387,17 @@ def main():
         UpdateEnvTempAndHumity(False)
         UpdateEnvGasSensors(False)
         
-        #turn on alarm if necessary and reset display so its on main screen, otherwise reset our alarm count so we don't inadvertantly set alarm
-        if bAlarmActive == True:
-            bAlarmActive = False
-            nAlarmCount = nAlarmCount + 1
-            if nAlarmCount >= 3:
-                SetLocalAlarm()
-                bToggle = False
-                nDisplay = 0
-        else:
-            nAlarmCount = 0
-        
         #now update our screen
         UpdateLCD(False)
-                
+        
+        
+        
         #reset timer
         lastupdatetime = time.time()
-    
-    #cleanup when we are done
-    rfDevice.cleanup()
+              
+    #set off alarms depending on readings
+        
+        #GPIO.output(ALERT,False)
     
 #python-wython stuff to force main to be called when running this as a program    
 if __name__ == '__main__':
